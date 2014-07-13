@@ -37,7 +37,7 @@ import java.util.UUID;
  * the table will be migrated twice (once for each version).
  */
 public class TableMigrationUtil {
-    public static final String LATEST_TABLE = "EchoPet_version3";
+    public static final String LATEST_TABLE = "EchoPet_version4";
     private static final List<MigrationStrategy> tableMigrationStrategies = new ArrayList<MigrationStrategy>();
 
     // TODO: Perhaps migration strategies should be moved to their own classes.
@@ -169,6 +169,33 @@ public class TableMigrationUtil {
                 statement.executeBatch();
             }
         });
+
+        // EchoPet_version3 -> EchoPet_version4
+        // New primary key: an auto-incrementing integer
+        // Supports multiple pets per player
+        tableMigrationStrategies.add(new MigrationStrategy("EchoPet_version3") {
+            @Override
+            public String getMigratedTableSchema() {
+                return "EchoPet_version4 ("
+                        + "    id           int          NOT NULL AUTO_INCREMENT,"
+                        + "    OwnerName    varchar(36)  NOT NULL               ,"
+                        + "    PetType      varchar(255) NOT NULL               ,"
+                        + "    PetName      varchar(255) NOT NULL               ,"
+                        + "    PetData      BIGINT       NOT NULL               ,"
+                        + "    RiderPetType varchar(255)                        ,"
+                        + "    RiderPetName varchar(255)                        ,"
+                        + "    RiderPetData BIGINT                              ,"
+                        + "    PRIMARY KEY (id)"
+                        + ");";
+            }
+
+            @Override
+            public void migrate(Connection conn) throws SQLException {
+                // Copy all of our data over to the new table
+                PreparedStatement copyStatement = conn.prepareStatement("INSERT INTO EchoPet_version4 (OwnerName, PetType, PetName, PetData, RiderPetType, RiderPetName, RiderPetData) SELECT * FROM EchoPet_version3");
+                copyStatement.executeUpdate();
+            }
+        });
     }
 
     /**
@@ -198,6 +225,31 @@ public class TableMigrationUtil {
                     conn.close();
                 } catch (SQLException ignored) {
                 }
+            }
+        }
+    }
+
+    /**
+     * Creates the newest table registered to TableMigrationUtil
+     */
+    public static void createNewestTable() {
+        Connection conn = null;
+
+        try {
+            conn = EchoPet.getCore().getDbPool().getConnection();
+
+            if (tableMigrationStrategies.size() > 0) {
+                MigrationStrategy strategy = tableMigrationStrategies.get(tableMigrationStrategies.size() - 1);
+                strategy.createTargetTable(conn);
+            }
+        } catch (SQLException e) {
+            EchoPet.LOG.console("Failed to create latest table");
+            e.printStackTrace();
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException ignored) {}
             }
         }
     }
